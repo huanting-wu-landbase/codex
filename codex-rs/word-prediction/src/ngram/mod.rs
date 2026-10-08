@@ -122,6 +122,17 @@ pub fn open(config: &Config) -> anyhow::Result<Box<dyn Predictor>> {
 }
 
 impl NgramPredictor {
+    /// Fresh model for the journal-backed worker. Never reads an engine snapshot.
+    #[cfg(unix)]
+    pub(crate) fn fresh(config: &Config) -> anyhow::Result<Self> {
+        Ok(Self {
+            model: model::Model::new(Params::default(), web::web_prior(&config.web_prior_path)?),
+            query: query::QueryState::default(),
+            gate: config.show_threshold,
+            state_dir: config.state_dir.clone(),
+        })
+    }
+
     /// Open with explicit `params` (tuning and benchmarks), restoring
     /// persisted state from `config.state_dir`.
     ///

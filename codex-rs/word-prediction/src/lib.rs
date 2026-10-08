@@ -4,13 +4,16 @@
 //! Local N-gram word completion, extracted from Oh My Pi.
 //!
 //! The caller supplies a local web prior and a private state directory. This crate
-//! does not read Codex configuration/history, download data, or start a service.
-//! Use a single owner per state directory; atomic snapshots do not merge writers.
+//! does not read Codex configuration/history or download data. The optional Unix
+//! service module provides an explicitly launched, journal-backed shared worker.
+//! Use a single owner per state directory; atomic engine snapshots do not merge writers.
 
 use std::path::PathBuf;
 
 pub mod ngram;
 pub mod prose;
+#[cfg(unix)]
+pub mod service;
 
 /// Editor state when ghost text is requested.
 #[derive(Clone, Copy, Debug)]
@@ -22,7 +25,7 @@ pub struct Query<'a> {
 }
 
 /// Text to paint after the typed prefix.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Suggestion {
     pub suffix: String,
     pub confidence: f32,

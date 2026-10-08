@@ -13,6 +13,11 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+libc = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time", "signal"] }
 zstd = { workspace = true }
 
 [dev-dependencies]

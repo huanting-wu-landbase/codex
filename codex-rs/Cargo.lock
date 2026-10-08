@@ -5366,7 +5366,12 @@ name = "codex-word-prediction"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
  "tempfile",
+ "tokio",
  "zstd",
 ]
 
