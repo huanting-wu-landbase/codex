@@ -5362,6 +5362,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-word-prediction"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "tempfile",
+ "zstd",
+]
+
+[[package]]
 name = "codex-workload-identity"
 version = "0.0.0"
 dependencies = [

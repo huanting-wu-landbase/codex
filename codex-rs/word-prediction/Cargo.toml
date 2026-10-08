@@ -1,0 +1,19 @@
+[package]
+name = "codex-word-prediction"
+version.workspace = true
+edition.workspace = true
+license = "MIT"
+
+[lib]
+name = "codex_word_prediction"
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+zstd = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
