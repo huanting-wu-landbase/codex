@@ -241,6 +241,25 @@ async fn torn_tail_is_recovered_but_complete_corruption_is_preserved() -> anyhow
 }
 
 #[tokio::test]
+async fn failed_initial_prior_can_be_replaced_in_the_same_home() -> anyhow::Result<()> {
+    for invalid in [b"not a zstd prior".to_vec(), zstd::encode_all(&b"PIWP"[..], 0)?] {
+        let (home, config) = fixture()?;
+        let prior = home.path().join("prior.zst");
+        let valid = std::fs::read(&prior)?;
+        std::fs::write(&prior, invalid)?;
+        assert!(Server::bind(config.clone()).await.is_err());
+
+        std::fs::write(&prior, valid)?;
+        let (stop, task) = start(&config).await?;
+        let reply = Client::new(&config).request(1, Operation::Ping).await;
+        stop.send(()).unwrap();
+        task.await??;
+        assert!(matches!(reply?, Reply::Ready { .. }));
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn changed_prior_and_journal_version_fail_without_rewriting_state() -> anyhow::Result<()> {
     let (home, config) = fixture()?;
     drop(Server::bind(config.clone()).await?);

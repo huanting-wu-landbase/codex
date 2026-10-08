@@ -53,6 +53,13 @@ impl Engine {
     pub(super) fn open(config: &ServiceConfig) -> anyhow::Result<Self> {
         let state_dir = config.state_dir();
         let prior_sha256 = format!("{:x}", Sha256::digest(std::fs::read(&config.prior)?));
+        // Validate the prior before committing its identity to a new journal.
+        // Failed first-time setup must remain retryable with a corrected dataset.
+        let model = NgramPredictor::fresh(&Config {
+            state_dir: state_dir.clone(),
+            web_prior_path: config.prior.clone(),
+            show_threshold: None,
+        })?;
         let mut journal = private_file(&state_dir.join("observations.jsonl"))?;
         if journal.metadata()?.len() == 0 {
             append(
@@ -85,11 +92,6 @@ impl Engine {
             header.prior_sha256 == prior_sha256,
             "prediction prior changed; use a separate state home"
         );
-        let model = NgramPredictor::fresh(&Config {
-            state_dir,
-            web_prior_path: config.prior.clone(),
-            show_threshold: None,
-        })?;
         let mut engine = Self {
             model,
             journal,
