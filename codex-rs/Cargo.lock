@@ -4842,6 +4842,7 @@ dependencies = [
  "codex-utils-sleep-inhibitor",
  "codex-utils-string",
  "codex-windows-sandbox",
+ "codex-word-prediction",
  "codex-worktree",
  "color-eyre",
  "core_test_support",
@@ -4865,6 +4866,7 @@ dependencies = [
  "rand 0.9.3",
  "ratatui",
  "ratatui-macros",
+ "regex",
  "regex-lite",
  "rmcp",
  "semver",
@@ -5358,6 +5360,20 @@ name = "codex-windows-sandbox-test-support"
 version = "0.0.0"
 dependencies = [
  "dirs",
+]
+
+[[package]]
+name = "codex-word-prediction"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+ "zstd",
 ]
 
 [[package]]

@@ -76,6 +76,9 @@ impl ChatComposer {
             return false;
         }
         if matches!(event.kind, MouseEventKind::Down(_)) {
+            self.invalidate_word_prediction_request();
+            self.prediction_dismissed.set(true);
+            self.word_prediction = None;
             if let Some(pasted) = self.draft.paste_burst.flush_before_modified_input() {
                 self.apply_paste(pasted);
             }

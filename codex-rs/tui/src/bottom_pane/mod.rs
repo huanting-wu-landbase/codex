@@ -257,6 +257,9 @@ pub(crate) use chat_composer::ComposerDraftSnapshot;
 pub(crate) use chat_composer::InputResult;
 pub(crate) use chat_composer::QueuedInputAction;
 pub(crate) use chat_composer::RestrictedInputMode;
+#[cfg(unix)]
+pub(crate) use chat_composer::word_prediction::PredictionRequest;
+pub(crate) use chat_composer::word_prediction::PredictionTicket;
 pub(crate) use chat_composer_history::HistoryEntry;
 pub(crate) use textarea::KillBufferSnapshot;
 
@@ -341,6 +344,25 @@ pub(crate) struct BottomPaneParams {
 }
 
 impl BottomPane {
+    pub(crate) fn apply_word_prediction(
+        &mut self,
+        ticket: PredictionTicket,
+        suffix: Option<String>,
+    ) {
+        self.composer.apply_word_prediction(ticket, suffix);
+        self.frame_requester.schedule_frame();
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn enable_word_prediction(&mut self, home: std::path::PathBuf) {
+        self.composer.enable_word_prediction(home);
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn observe_word_prediction(&self, id: String, text: String) {
+        self.composer.observe_word_prediction(id, text);
+    }
+
     pub fn new(params: BottomPaneParams) -> Self {
         Self::new_with_composer_config(params, ChatComposerConfig::default())
     }
@@ -904,6 +926,13 @@ impl BottomPane {
             InputResult::None
         } else {
             if self.handle_inline_banner_key(key_event) {
+                return InputResult::None;
+            }
+            if key_hint::plain(KeyCode::Esc).is_press(key_event)
+                && !self.composer.should_handle_vim_insert_escape(key_event)
+                && self.composer.dismiss_word_prediction()
+            {
+                self.request_redraw();
                 return InputResult::None;
             }
             // Allow the configured interrupt while a task is running, even when its
@@ -1718,6 +1747,8 @@ impl BottomPane {
             .is_some_and(|(name, _, _)| matches!(name, "agents" | "subagents"));
 
         self.keymap.chat.interrupt_turn.is_pressed(key_event)
+            && !(key_hint::plain(KeyCode::Esc).is_press(key_event)
+                && self.composer.has_word_prediction())
             && !(self.shortcut_overlay_visible()
                 && key_hint::plain(KeyCode::Esc).is_press(key_event))
             && self.is_task_running
@@ -3542,6 +3573,27 @@ mod tests {
         pane.drain_pending_submission_state();
 
         assert!(pane.remote_image_urls().is_empty());
+    }
+
+    #[test]
+    fn word_prediction_escape_dismisses_before_interrupting_task() {
+        let (raw, mut events) = unbounded_channel::<AppEvent>();
+        let mut pane = test_pane(AppEventSender::new(raw));
+        pane.set_task_running(true);
+        pane.composer
+            .set_text_content("please ref".into(), Vec::new(), Vec::new());
+        pane.composer.set_disable_paste_burst(true);
+        pane.composer.move_cursor_to_end();
+        let request = pane.composer.take_word_prediction_request().unwrap();
+        pane.composer.set_word_prediction("please ref", "actor");
+        assert!(!pane.should_interrupt_running_task(KeyCode::Esc.into()));
+        pane.handle_key_event(KeyCode::Esc.into());
+        pane.composer
+            .apply_word_prediction(request.ticket, Some("actor".into()));
+        assert!(pane.composer.take_word_prediction_request().is_none());
+        while let Ok(event) = events.try_recv() {
+            assert!(!matches!(event, AppEvent::CodexOp(Op::Interrupt)));
+        }
     }
 
     #[test]

@@ -490,6 +490,22 @@ impl ChatWidget {
         if !self.submit_op(op.clone()) {
             return (false, None);
         }
+        #[cfg(unix)]
+        if source == UserMessageSource::Prompt
+            && matches!(&history_record, UserMessageHistoryRecord::UserMessageText)
+            && !submitted_message.text.trim_start().starts_with(['/', '!'])
+            && !submitted_message.text.trim().is_empty()
+            && submitted_message.text.len() <= 64 * 1024
+            && submitted_message.text_elements.is_empty()
+            && submitted_message.mention_bindings.is_empty()
+        {
+            // Queue admission returns earlier. Observe only actual dispatch, using
+            // the submission's existing UUID so transport retries cannot double-learn.
+            self.bottom_pane.observe_word_prediction(
+                client_user_message_id.clone(),
+                submitted_message.text.clone(),
+            );
+        }
         if source == UserMessageSource::Prompt {
             self.bottom_pane.clear_pending_questions();
         }

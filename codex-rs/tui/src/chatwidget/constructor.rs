@@ -290,6 +290,10 @@ impl ChatWidget {
             test_codex_home: None,
         };
 
+        #[cfg(unix)]
+        widget
+            .bottom_pane
+            .enable_word_prediction(widget.config.codex_home.to_path_buf());
         widget.prefetch_rate_limits();
         if let Some(keymap) = runtime_keymap {
             widget.bottom_pane.set_keymap_bindings(&keymap);
@@ -324,5 +328,15 @@ impl ChatWidget {
         widget.refresh_status_surfaces();
 
         widget
+    }
+}
+
+impl ChatWidget {
+    pub(crate) fn apply_word_prediction(
+        &mut self,
+        ticket: crate::bottom_pane::PredictionTicket,
+        suffix: Option<String>,
+    ) {
+        self.bottom_pane.apply_word_prediction(ticket, suffix);
     }
 }

@@ -34,6 +34,11 @@ fn audited_overrides_allow_daemon_without_allowing_arbitrary_config() {
         ("tui={fullscreen_transcript='true'}", false),
         ("tui={fullscreen_transcript=true,animations=false}", false),
         ("features={}", false),
+        ("tui.keymap.composer.queue='ctrl-q'", true),
+        ("tui.keymap.editor.insert_newline=['ctrl-j','ctrl-m','enter','shift-enter','alt-enter']", true),
+        ("tui.keymap.composer.queue=42", false),
+        ("tui.keymap.editor.insert_newline=[true]", false),
+        ("tui.keymap.composer.submit='ctrl-q'", false),
         ("model='test'", false),
     ] {
         let overrides = codex_utils_cli::CliConfigOverrides {

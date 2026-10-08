@@ -255,6 +255,8 @@ mod version;
 mod vim_search;
 mod width;
 mod windows_sandbox;
+#[cfg(unix)]
+mod word_prediction;
 mod workspace_command;
 mod workspace_messages;
 
