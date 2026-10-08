@@ -49,7 +49,7 @@ fn word_prediction_vim_normal_and_replace_hide_suffix() {
         let text = buffer
             .content
             .iter()
-            .map(|cell| cell.symbol())
+            .map(ratatui::buffer::Cell::symbol)
             .collect::<String>();
         assert!(!text.contains("refactor"));
     }
@@ -226,7 +226,7 @@ fn word_prediction_code_paths_and_commands_are_suppressed() {
         let text = buffer
             .content
             .iter()
-            .map(|cell| cell.symbol())
+            .map(ratatui::buffer::Cell::symbol)
             .collect::<String>();
         assert!(!text.contains("refactor"), "draft {draft}");
     }
@@ -262,4 +262,45 @@ fn word_prediction_paste_and_cursor_moves_invalidate() {
     paint(&composer, 80);
     composer.handle_key_event(KeyCode::Tab.into());
     assert_eq!(composer.current_text(), "please ref");
+}
+
+#[test]
+fn word_prediction_async_reply_is_rejected_after_escape_and_draft_reuse() {
+    let mut composer = composer_with_prediction();
+    let request = composer.take_word_prediction_request().unwrap();
+    composer.handle_key_event(KeyCode::Esc.into());
+    composer.apply_word_prediction(request.ticket, Some("actor".into()));
+    assert!(composer.word_prediction.is_none());
+    assert!(composer.take_word_prediction_request().is_none());
+    composer.set_text_content("please ref".into(), Vec::new(), Vec::new());
+    composer.apply_word_prediction(request.ticket, Some("actor".into()));
+    assert!(composer.word_prediction.is_none());
+}
+
+#[test]
+fn word_prediction_async_reply_is_scoped_to_composer_and_latest_draft() {
+    let mut composer = composer_with_prediction();
+    let request = composer.take_word_prediction_request().unwrap();
+    assert_eq!(request.before, "please ");
+    assert_eq!(request.prefix, "ref");
+    let mut other = composer_with_prediction();
+    other.word_prediction = None;
+    other.apply_word_prediction(request.ticket, Some("actor".into()));
+    assert!(other.word_prediction.is_none());
+    composer.apply_word_prediction(request.ticket, Some("actor".into()));
+    paint(&composer, 80);
+    composer.handle_key_event(KeyCode::Tab.into());
+    assert_eq!(composer.current_text(), "please refactor ");
+}
+
+#[test]
+fn word_prediction_masking_invalidates_pending_reply() {
+    let mut composer = composer_with_prediction();
+    composer.word_prediction = None;
+    let request = composer.take_word_prediction_request().unwrap();
+    let area = Rect::new(0, 0, 80, 10);
+    let mut buffer = Buffer::empty(area);
+    composer.render_with_mask(area, &mut buffer, Some('*'));
+    composer.apply_word_prediction(request.ticket, Some("actor".into()));
+    assert!(composer.word_prediction.is_none());
 }

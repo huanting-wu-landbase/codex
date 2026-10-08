@@ -287,6 +287,10 @@ pub(crate) struct AgentPickerThreadRefresh {
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, IntoStaticStr)]
 pub(crate) enum AppEvent {
+    WordPrediction {
+        ticket: crate::bottom_pane::PredictionTicket,
+        suffix: Option<String>,
+    },
     AccountEmailLoaded {
         request_id: uuid::Uuid,
         email: Option<String>,

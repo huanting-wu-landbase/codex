@@ -1,4 +1,4 @@
-//! Explicit development worker entrypoint. The normal CLI does not launch it yet.
+//! Prediction worker entrypoint, launched only by the opt-in development client.
 #[cfg(unix)]
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -13,11 +13,18 @@ async fn main() -> anyhow::Result<()> {
             .context("usage: codex-prediction-server <isolated-home> <local-prior>")?,
     );
     let prior = PathBuf::from(args.next().context("missing local prior path")?);
+    let idle_ms = args
+        .next()
+        .map(|arg| arg.to_string_lossy().parse::<u64>())
+        .transpose()?;
     anyhow::ensure!(
         args.next().is_none(),
         "unexpected prediction server arguments"
     );
-    let config = ServiceConfig::new(&home, &prior)?;
+    let mut config = ServiceConfig::new(&home, &prior)?;
+    if let Some(idle_ms) = idle_ms {
+        config.idle_timeout = std::time::Duration::from_millis(idle_ms);
+    }
     let server = Server::bind(config).await?;
     server
         .run(async {

@@ -49,6 +49,8 @@ impl ChatComposer {
 
     /// Classify an explicit paste before integrating text shared with the buffered key path.
     pub fn handle_paste(&mut self, pasted: String) -> bool {
+        self.invalidate_word_prediction_request();
+        self.prediction_dismissed.set(true);
         self.word_prediction = None;
         self.note_sparkle_paste(&pasted);
         self.apply_paste(pasted)

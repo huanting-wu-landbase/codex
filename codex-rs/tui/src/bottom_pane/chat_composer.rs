@@ -21,6 +21,11 @@
 //! The plain-text preset keeps command prefixes literal, including `!`, so Enter and Tab
 //! submit ordinary text without enabling shell mode.
 //!
+//! Live word prediction is opt-in through the isolated launcher's dataset path. Rendering
+//! schedules a debounced query; replies carry a composer ID and input generation. Editing,
+//! paste, focus loss, masked input, and dismissal invalidate pending replies. Ghost suffixes
+//! stay outside the draft until Tab (with a space) or Right accepts a visibly rendered result.
+//!
 //! # Mention Menus
 //!
 //! By default, `@` lists plugins, filesystem entries, and skills. Skills are hidden when their
@@ -397,7 +402,7 @@ mod status_surface;
 mod vim_history;
 mod vim_search;
 mod warning_notice;
-mod word_prediction;
+pub(super) mod word_prediction;
 
 use self::attachment_state::AttachmentState;
 use self::draft_state::ComposerMentionBinding;
@@ -653,6 +658,13 @@ pub(crate) struct ChatComposer {
     submit_keys: Vec<KeyBinding>,
     queue_keys: Vec<KeyBinding>,
     word_prediction: Option<word_prediction::WordPrediction>,
+    prediction_id: uuid::Uuid,
+    prediction_generation: std::cell::Cell<u64>,
+    prediction_requested: std::cell::RefCell<Option<(u64, String)>>,
+    prediction_dismissed: std::cell::Cell<bool>,
+    prediction_pending: std::cell::Cell<bool>,
+    #[cfg(unix)]
+    prediction_runtime: Option<crate::word_prediction::Runtime>,
     toggle_shortcuts_keys: Vec<KeyBinding>,
     history_search_previous_keys: Vec<KeyBinding>,
     history_search_next_keys: Vec<KeyBinding>,
@@ -826,6 +838,13 @@ impl ChatComposer {
             submit_keys: vec![key_hint::plain(KeyCode::Enter)],
             queue_keys: vec![key_hint::plain(KeyCode::Tab)],
             word_prediction: None,
+            prediction_id: uuid::Uuid::new_v4(),
+            prediction_generation: std::cell::Cell::new(0),
+            prediction_requested: std::cell::RefCell::new(None),
+            prediction_dismissed: std::cell::Cell::new(false),
+            prediction_pending: std::cell::Cell::new(false),
+            #[cfg(unix)]
+            prediction_runtime: None,
             toggle_shortcuts_keys: vec![
                 key_hint::plain(KeyCode::Char('?')),
                 key_hint::shift(KeyCode::Char('?')),
@@ -1537,6 +1556,8 @@ impl ChatComposer {
         local_image_paths: Vec<PathBuf>,
         mention_bindings: Vec<MentionBinding>,
     ) {
+        self.invalidate_word_prediction_request();
+        self.prediction_dismissed.set(false);
         self.word_prediction = None;
         if !self.sparkle.history_preview {
             if local_image_paths.is_empty() {
@@ -1942,6 +1963,9 @@ impl ChatComposer {
             self.draft.textarea.enter_vim_insert_mode();
         }
 
+        self.invalidate_word_prediction_request();
+        self.prediction_dismissed
+            .set(key_event.code == KeyCode::Esc);
         self.draft.textarea_state.get_mut().follow_cursor();
         if let Some(result) = self.handle_word_prediction_key(key_event) {
             return result;
@@ -4246,6 +4270,8 @@ impl ChatComposer {
 
     fn set_has_focus(&mut self, has_focus: bool) {
         if !has_focus {
+            self.invalidate_word_prediction_request();
+            self.prediction_dismissed.set(false);
             self.word_prediction = None;
         }
         self.has_focus = has_focus;
@@ -4254,6 +4280,8 @@ impl ChatComposer {
     #[allow(dead_code)]
     pub(crate) fn set_input_enabled(&mut self, enabled: bool, placeholder: Option<String>) {
         if !enabled {
+            self.invalidate_word_prediction_request();
+            self.prediction_dismissed.set(false);
             self.word_prediction = None;
         }
         self.draft.input_enabled = enabled;
@@ -4511,6 +4539,7 @@ impl ChatComposer {
         mask_char: Option<char>,
         options: ComposerRenderOptions<'_>,
     ) {
+        self.schedule_word_prediction(mask_char.is_some());
         if let Some(prediction) = &self.word_prediction {
             prediction.rendered.set(false);
         }

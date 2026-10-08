@@ -17,8 +17,10 @@ libc = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time", "signal"] }
+tokio = { workspace = true, features = ["rt", "macros", "net", "io-util", "sync", "time", "signal", "process"] }
 zstd = { workspace = true }
 
 [dev-dependencies]
+# Exercise the same JSON feature combination used by the TUI.
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
 tempfile = { workspace = true }

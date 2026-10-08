@@ -6,6 +6,8 @@
 //! is authoritative; engine snapshots are deliberately not used by this service.
 
 mod journal;
+mod managed_client;
+pub use managed_client::ManagedClient;
 
 use std::fs::File;
 use std::future::Future;

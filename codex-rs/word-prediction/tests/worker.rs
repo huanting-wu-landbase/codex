@@ -405,3 +405,37 @@ async fn incomplete_and_oversized_clients_do_not_block_other_clients_or_learn() 
     task.await??;
     Ok(())
 }
+
+#[tokio::test]
+async fn managed_client_starts_worker_and_reconnects_after_idle_exit() -> anyhow::Result<()> {
+    use codex_word_prediction::service::ManagedClient;
+    let (_home, mut config) = fixture()?;
+    config.idle_timeout = Duration::from_millis(150);
+    let client = ManagedClient::connect(
+        config.clone(),
+        env!("CARGO_BIN_EXE_codex-prediction-server").into(),
+    )
+    .await?;
+    assert!(matches!(
+        client.request(1, observation("auto:1")).await?,
+        Reply::Observed { new: true }
+    ));
+    assert!(Server::bind(config.clone()).await.is_err());
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while config.socket_path().exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await?;
+    assert!(matches!(
+        client.request(2, observation("auto:1")).await?,
+        Reply::Observed { new: false }
+    ));
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while config.socket_path().exists() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await?;
+    Ok(())
+}

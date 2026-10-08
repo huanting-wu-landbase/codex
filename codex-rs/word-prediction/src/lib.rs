@@ -28,6 +28,7 @@ pub struct Query<'a> {
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Suggestion {
     pub suffix: String,
+    #[serde(deserialize_with = "deserialize_confidence")]
     pub confidence: f32,
 }
 
@@ -50,4 +51,17 @@ pub trait Predictor: Send {
     fn feedback(&mut self, query: &Query<'_>, suggestion: &str, accepted: bool);
     /// Persist learned state, returning an error if writing fails.
     fn persist(&mut self) -> anyhow::Result<()>;
+}
+
+// Internally tagged service replies buffer values through Serde. With the TUI's
+// serde_json arbitrary_precision feature, buffered numbers use a special map;
+// Number understands both that representation and ordinary numeric values.
+fn deserialize_confidence<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<f32, D::Error> {
+    let number = <serde_json::Number as serde::Deserialize>::deserialize(deserializer)?;
+    number
+        .as_f64()
+        .map(|value| value as f32)
+        .ok_or_else(|| serde::de::Error::custom("invalid prediction confidence"))
 }

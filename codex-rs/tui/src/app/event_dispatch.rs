@@ -137,6 +137,7 @@ impl App {
             event => (event, None),
         };
         match event {
+            AppEvent::WordPrediction { ticket, suffix } => self.chat_widget.apply_word_prediction(ticket, suffix),
             AppEvent::OpenDaemonMenu => self.open_daemon_menu(),
             AppEvent::ConfirmDaemonUpdate(source) => self.confirm_daemon_update(source),
             AppEvent::RunDaemonUpdate(source) => {

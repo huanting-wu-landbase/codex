@@ -1,4 +1,4 @@
-//! Render-only word suffixes. The prediction worker will supply results through the setter.
+//! Render-only suffixes with generation-scoped asynchronous requests and replies.
 
 use std::cell::Cell;
 use std::sync::LazyLock;
@@ -19,13 +19,146 @@ pub(super) struct WordPrediction {
     pub(super) rendered: Cell<bool>,
 }
 
-static WORD: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^[\p{L}'][\p{L}\p{M}']*$").expect("valid word regex"));
+static WORD: LazyLock<Regex> = LazyLock::new(|| match Regex::new(r"^[\p{L}'][\p{L}\p{M}']*$") {
+    Ok(regex) => regex,
+    Err(error) => panic!("invalid word prediction regex: {error}"),
+});
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct PredictionTicket {
+    pub(crate) composer: uuid::Uuid,
+    pub(crate) generation: u64,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PredictionRequest {
+    pub(crate) ticket: PredictionTicket,
+    pub(crate) before: String,
+    pub(crate) prefix: String,
+}
 
 impl ChatComposer {
+    pub(super) fn invalidate_word_prediction_request(&self) {
+        self.prediction_generation
+            .set(self.prediction_generation.get().wrapping_add(1));
+        self.prediction_requested.borrow_mut().take();
+        self.prediction_pending.set(false);
+        #[cfg(unix)]
+        if let Some(runtime) = &self.prediction_runtime {
+            runtime.request(None);
+        }
+    }
+
+    pub(crate) fn take_word_prediction_request(&self) -> Option<PredictionRequest> {
+        if self.prediction_dismissed.get() || !self.word_prediction_allowed() {
+            return None;
+        }
+        let generation = self.prediction_generation.get();
+        let draft = self.draft.textarea.text();
+        if self
+            .prediction_requested
+            .borrow()
+            .as_ref()
+            .is_some_and(|(g, text)| *g == generation && text == draft)
+        {
+            return None;
+        }
+        let prefix = draft.rsplit(char::is_whitespace).next()?;
+        let before = &draft[..draft.len() - prefix.len()];
+        self.prediction_requested
+            .replace(Some((generation, draft.to_owned())));
+        self.prediction_pending.set(true);
+        Some(PredictionRequest {
+            ticket: PredictionTicket {
+                composer: self.prediction_id,
+                generation,
+            },
+            before: before.to_owned(),
+            prefix: prefix.to_owned(),
+        })
+    }
+
+    pub(crate) fn apply_word_prediction(
+        &mut self,
+        ticket: PredictionTicket,
+        suffix: Option<String>,
+    ) {
+        if ticket.composer != self.prediction_id
+            || ticket.generation != self.prediction_generation.get()
+            || self.prediction_dismissed.get()
+            || !self.word_prediction_allowed()
+        {
+            return;
+        }
+        let current =
+            self.prediction_requested
+                .borrow()
+                .as_ref()
+                .is_some_and(|(generation, draft)| {
+                    *generation == ticket.generation && draft == self.draft.textarea.text()
+                });
+        if !current {
+            return;
+        }
+        self.prediction_pending.set(false);
+        let draft = self.draft.textarea.text().to_owned();
+        self.word_prediction = None;
+        if let Some(suffix) = suffix {
+            self.set_word_prediction(&draft, &suffix);
+        }
+    }
+
+    pub(crate) fn has_word_prediction(&self) -> bool {
+        !self.popup_active() && (self.word_prediction.is_some() || self.prediction_pending.get())
+    }
+
+    pub(crate) fn dismiss_word_prediction(&mut self) -> bool {
+        if !self.has_word_prediction() {
+            return false;
+        }
+        self.invalidate_word_prediction_request();
+        self.prediction_dismissed.set(true);
+        self.word_prediction = None;
+        true
+    }
+
+    pub(super) fn schedule_word_prediction(&self, masked: bool) {
+        #[cfg(unix)]
+        if self.prediction_runtime.is_none() && self.prediction_requested.borrow().is_none() {
+            return;
+        }
+        #[cfg(not(unix))]
+        if self.prediction_requested.borrow().is_none() {
+            return;
+        }
+        if masked || !self.word_prediction_allowed() {
+            if self.prediction_requested.borrow().is_some() {
+                self.invalidate_word_prediction_request();
+            }
+            return;
+        }
+        #[cfg(unix)]
+        if let Some(runtime) = &self.prediction_runtime
+            && let Some(request) = self.take_word_prediction_request()
+        {
+            runtime.request(Some(request));
+        }
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn enable_word_prediction(&mut self, home: std::path::PathBuf) {
+        self.prediction_runtime =
+            crate::word_prediction::Runtime::from_env(home, self.app_event_tx.clone());
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn observe_word_prediction(&self, id: String, text: String) {
+        if let Some(runtime) = &self.prediction_runtime {
+            runtime.observe(id, text);
+        }
+    }
+
     /// Receive a suffix for exactly this draft; stale asynchronous results are ignored.
-    /// No prediction source is enabled by this UI-only integration.
-    #[allow(dead_code)] // Entry point for the upcoming prediction worker.
     pub(crate) fn set_word_prediction(&mut self, draft: &str, suffix: &str) {
         if self.draft.textarea.text() != draft {
             return;
