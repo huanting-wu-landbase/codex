@@ -5,7 +5,7 @@ fn composer_with_prediction() -> ChatComposer {
     let (mut composer, _rx) = new_test_composer();
     composer.set_disable_paste_burst(true);
     let config: codex_config::types::TuiKeymap = toml::from_str(
-        "[composer]\nqueue = 'alt-enter'\n[editor]\ninsert_newline = ['ctrl-j', 'ctrl-m', 'enter', 'shift-enter']",
+        "[composer]\nqueue = 'ctrl-q'\n[editor]\ninsert_newline = ['ctrl-j', 'ctrl-m', 'enter', 'shift-enter', 'alt-enter']",
     ).unwrap();
     let keymap = RuntimeKeymap::from_config(&config).unwrap();
     composer.set_keymap_bindings(&keymap);
@@ -68,7 +68,7 @@ fn word_prediction_slash_menu_keeps_tab_priority() {
 }
 
 #[test]
-fn word_prediction_alt_enter_remap_preserves_ctrl_j_newline() {
+fn word_prediction_queue_remap_preserves_ctrl_j_newline() {
     let mut composer = composer_with_prediction();
     paint(&composer, 80);
     composer.handle_key_event(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL));
@@ -104,7 +104,7 @@ fn word_prediction_remapped_queue_never_submits_ghost_text() {
     let mut composer = composer_with_prediction();
     composer.set_task_running(true);
     paint(&composer, 80);
-    let (result, _) = composer.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT));
+    let (result, _) = composer.handle_key_event(KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL));
     assert!(matches!(result, InputResult::Queued { text, .. } if text == "please ref"));
 }
 
@@ -303,4 +303,18 @@ fn word_prediction_masking_invalidates_pending_reply() {
     composer.render_with_mask(area, &mut buffer, Some('*'));
     composer.apply_word_prediction(request.ticket, Some("actor".into()));
     assert!(composer.word_prediction.is_none());
+}
+
+#[test]
+fn word_prediction_queue_remap_preserves_shift_enter_and_kitty_alias() {
+    for key in [
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+    ] {
+        let mut composer = composer_with_prediction();
+        paint(&composer, 80);
+        let (result, _) = composer.handle_key_event(key);
+        assert_eq!(result, InputResult::None);
+        assert_eq!(composer.current_text(), "please ref\n");
+    }
 }

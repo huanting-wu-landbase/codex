@@ -97,6 +97,14 @@ pub(super) fn config_exclusion(
         .iter()
         .all(|(key, value)| match key.as_str() {
             "suppress_unstable_features_warning" | "tui.fullscreen_transcript" => value.is_bool(),
+            // These bindings are handled entirely by the client composer/editor.
+            // They do not change the shared server's configuration or thread requests.
+            "tui.keymap.composer.queue" | "tui.keymap.editor.insert_newline" => {
+                value.is_str()
+                    || value
+                        .as_array()
+                        .is_some_and(|bindings| bindings.iter().all(toml::Value::is_str))
+            }
             "tui" => value.as_table().is_some_and(|tui| {
                 tui.len() == 1
                     && tui
