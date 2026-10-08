@@ -205,6 +205,16 @@
 //! overwriting the placeholder or normal cursor. Hidden frames do not schedule animation redraws;
 //! motion settings, the starfield preference, and true-color support also gate the effect.
 //!
+//! # Word predictions
+//!
+//! Word predictions are render-only suffixes bound to the current draft. They never enter
+//! submission/history until accepted. With no popup or search owning input, Tab accepts a visible
+//! suffix plus a space; Right accepts without a space. Queueing remains configurable through the
+//! existing composer keymap (the development config moves it to Alt+Enter). Prediction rendering
+//! is restricted to prose at draft end in an editable, focused, unmasked composer, and suppresses
+//! suffixes that do not fit on the remaining visual line. Cursor movement, paste, and dismissal
+//! invalidate predictions; typing through a suggestion retains its untyped suffix.
+//!
 //! # Large Paste Placeholders
 //!
 //! Large pastes insert an element placeholder in the buffer and store the full text in
@@ -387,6 +397,7 @@ mod status_surface;
 mod vim_history;
 mod vim_search;
 mod warning_notice;
+mod word_prediction;
 
 use self::attachment_state::AttachmentState;
 use self::draft_state::ComposerMentionBinding;
@@ -641,6 +652,7 @@ pub(crate) struct ChatComposer {
     vim_history: VimHistory,
     submit_keys: Vec<KeyBinding>,
     queue_keys: Vec<KeyBinding>,
+    word_prediction: Option<word_prediction::WordPrediction>,
     toggle_shortcuts_keys: Vec<KeyBinding>,
     history_search_previous_keys: Vec<KeyBinding>,
     history_search_next_keys: Vec<KeyBinding>,
@@ -813,6 +825,7 @@ impl ChatComposer {
             vim_history: VimHistory::default(),
             submit_keys: vec![key_hint::plain(KeyCode::Enter)],
             queue_keys: vec![key_hint::plain(KeyCode::Tab)],
+            word_prediction: None,
             toggle_shortcuts_keys: vec![
                 key_hint::plain(KeyCode::Char('?')),
                 key_hint::shift(KeyCode::Char('?')),
@@ -1524,6 +1537,7 @@ impl ChatComposer {
         local_image_paths: Vec<PathBuf>,
         mention_bindings: Vec<MentionBinding>,
     ) {
+        self.word_prediction = None;
         if !self.sparkle.history_preview {
             if local_image_paths.is_empty() {
                 self.note_sparkle_replaced_text(&text);
@@ -1929,8 +1943,12 @@ impl ChatComposer {
         }
 
         self.draft.textarea_state.get_mut().follow_cursor();
+        if let Some(result) = self.handle_word_prediction_key(key_event) {
+            return result;
+        }
         let before = self.before_sparkle_key(key_event);
         let result = self.handle_key_event_inner(key_event);
+        self.update_word_prediction_after_key(key_event);
         self.after_sparkle_key(before, &result.0);
         result
     }
@@ -4227,11 +4245,17 @@ impl ChatComposer {
     }
 
     fn set_has_focus(&mut self, has_focus: bool) {
+        if !has_focus {
+            self.word_prediction = None;
+        }
         self.has_focus = has_focus;
     }
 
     #[allow(dead_code)]
     pub(crate) fn set_input_enabled(&mut self, enabled: bool, placeholder: Option<String>) {
+        if !enabled {
+            self.word_prediction = None;
+        }
         self.draft.input_enabled = enabled;
         self.draft.input_disabled_placeholder = if enabled { None } else { placeholder };
 
@@ -4487,6 +4511,9 @@ impl ChatComposer {
         mask_char: Option<char>,
         options: ComposerRenderOptions<'_>,
     ) {
+        if let Some(prediction) = &self.word_prediction {
+            prediction.rendered.set(false);
+        }
         let ComposerLayout {
             status,
             composer: composer_rect,
@@ -4886,6 +4913,9 @@ impl ChatComposer {
                 }
             }
         }
+        if mask_char.is_none() {
+            self.render_word_prediction(textarea_rect, buf, *state);
+        }
         if !self.draft.input_enabled || textarea_is_empty {
             let text = if self.draft.input_enabled {
                 self.placeholder_text.as_str().to_string()
@@ -4983,6 +5013,10 @@ mod snapshot_tests;
 #[cfg(test)]
 #[path = "chat_composer/mentions_layout_tests.rs"]
 mod mentions_layout_tests;
+
+#[cfg(test)]
+#[path = "chat_composer/word_prediction_tests.rs"]
+mod word_prediction_tests;
 
 #[cfg(test)]
 mod tests {

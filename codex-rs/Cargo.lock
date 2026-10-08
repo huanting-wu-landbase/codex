@@ -4865,6 +4865,7 @@ dependencies = [
  "rand 0.9.3",
  "ratatui",
  "ratatui-macros",
+ "regex",
  "regex-lite",
  "rmcp",
  "semver",
